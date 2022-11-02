@@ -7,22 +7,24 @@ const X_RES: usize = 2000;
 const Y_RES: usize = 2000;
 const N: usize = 2000;
 const HEADER: &'static str = const_format::formatcp!("P3\n{X_RES} {Y_RES}\n255\n");
+const OUT_PREFIX: &'static str = "out/out";
 
 fn main() -> std::io::Result<()> {
-    let mut final_buf = HEADER.to_string();
-    let mut fname_buf = std::path::PathBuf::from("out");
+    let mut buf_ppm = HEADER.to_string();
+    let mut buf_fname = OUT_PREFIX.to_string();
 
     for max_iterations in 1..N + 1 {
         let mut file = {
-            fname_buf.push(format!("out{max_iterations:04}.ppm"));
-            let f = File::create(&fname_buf)?;
-            fname_buf.pop();
+            buf_fname.push_str(format!("{max_iterations:04}").as_str());
+            buf_fname.push_str(".ppm");
+            let f = File::create(&buf_fname)?;
+            buf_fname.drain(OUT_PREFIX.len()..);
 
             f
         };
 
         let s = (-(max_iterations as f64) / 50.0).exp();
-        let scale_factors = scale_factors(
+        let scaler = scaler(
             X_RES,
             Y_RES,
             -1.75 * s + 0.1000001009999,
@@ -33,11 +35,9 @@ fn main() -> std::io::Result<()> {
 
         let pixels: Vec<_> = (0..Y_RES)
             .into_par_iter()
-            .flat_map(|y| (0..X_RES).into_par_iter().map(move |x| (x, y)))
-            .map(|(x, y)| {
-                // me when array_zip is unstable
-                let scaled =
-                    Complex::new((x as f64) / scale_factors[0], (y as f64) / scale_factors[1]);
+            .flat_map(|y| (0..X_RES).into_par_iter().map(move |x| [x, y]))
+            .map(|point| {
+                let scaled = scaler(point);
 
                 julia(
                     scaled,
@@ -66,12 +66,12 @@ fn main() -> std::io::Result<()> {
 
         {
             for pixel in pixels {
-                final_buf.push_str(pixel.as_ref())
+                buf_ppm.push_str(pixel.as_ref())
             }
 
-            file.write_all(final_buf.as_bytes())?;
+            file.write_all(buf_ppm.as_bytes())?;
 
-            final_buf.drain(HEADER.len()..);
+            buf_ppm.drain(HEADER.len()..);
         }
 
         eprint!("\rWrote image #{:03}", max_iterations);
@@ -79,18 +79,26 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn scale_factors(
+fn scaler(
     max_x: usize,
     max_y: usize,
     rmin: f64,
     rmax: f64,
     imin: f64,
     imax: f64,
-) -> [f64; 2] {
-    [
-        ((max_x as f64) / (rmax - rmin)) + rmin,
-        ((max_y as f64) / (imax - imin)) + imin,
-    ]
+) -> impl Fn([usize; 2]) -> Complex<f64> {
+    let [factor_re, factor_im] = [
+        ((max_x as f64) / (rmax - rmin)).recip(),
+        ((max_y as f64) / (imax - imin)).recip(),
+    ];
+
+    move |point| {
+        let [x, y] = point.map(|v| v as f64);
+        let comps = [[x, factor_re, rmin], [y, factor_im, imin]];
+        let [re, im] = comps.map(|[point, fac, off]| point * fac + off);
+
+        Complex { re, im }
+    }
 }
 
 fn julia(
