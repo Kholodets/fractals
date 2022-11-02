@@ -13,12 +13,11 @@ use palette::{
     convert::TryFromColor
 };
 use rayon::prelude::*;
-const X_RES: i32 = 100;
-const Y_RES: i32 = 100;
-const N: i32 = 620;
-fn main() -> std::io::Result<()> {
-    
-    for its in 1..N {
+const X_RES: i32 = 2000;
+const Y_RES: i32 = 2000;
+const N: i32 = 2000;
+fn main() -> std::io::Result<()> { 
+    for its in 1..N+1 {
         let f = File::create(format!("out/out{:04}.ppm", its))?;
         let mut w = BufWriter::new(&f);
         writeln!(w, "P3");
@@ -30,8 +29,8 @@ fn main() -> std::io::Result<()> {
             let mut row = Vec::new();
             (0..X_RES).into_par_iter().map( |x| {
                 let s = (-(it as f64) / 50.0).exp();
-                let scaled = scale(x, y, X_RES, Y_RES, -1.75 * s, 1.75 * s, -1.75 * s, 1.75 * s);
-                let i = julia(scaled, &|p: Complex<f64>| {
+                let scaled = scale(x, y, X_RES, Y_RES, -1.75 * s + 0.1000001009999, 1.75 * s + 0.1000001009999, -1.75 * s + 0.0999989899, 1.75 * s + 0.0999989899);
+                let i = julia(scaled, |p: Complex<f64>| {
                     let c = Complex::new(-0.8, 0.156);
                     p.powu(2) + c
                 }, 0, it, 3.0);
@@ -56,7 +55,7 @@ fn scale(x: i32, y: i32, xm: i32, ym: i32, rmin: f64, rmax: f64, imin: f64, imax
 
 fn julia(
     p: Complex<f64>, 
-    f: &dyn Fn(Complex<f64>) -> Complex<f64>, 
+    f: fn(Complex<f64>) -> Complex<f64>, 
     i: i32, 
     max: i32,
     R: f64) -> i32 {
